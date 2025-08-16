@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 st.title("Calibración estimada de hormigones-IoT Provoleta")
 
 # Inputs
-temp_lab = st.number_input("Temperatura de laboratorio (°C)", value=20.0)
-temp_datum = st.number_input("Temperatura datum (°C)", value=0.0)
+temp_lab = st.number_input("Temperatura de laboratorio (°C)", value=23.0)
+temp_datum = st.number_input("Temperatura datum (°C)", value=-10.0)
 
 st.markdown("### Ingresar datos de ensayo")
 st.write("Cargue pares de Edad (días) y Resistencia (MPa):")
