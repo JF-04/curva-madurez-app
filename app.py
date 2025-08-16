@@ -14,7 +14,7 @@ st.write("Cargue pares de Edad (días) y Resistencia (MPa):")
 
 # Tabla editable
 df = st.data_editor(
-    pd.DataFrame({"Edad (días)": [0,1, 3, 7], "Resistencia (MPa)": [0.0,10.0, 
+    pd.DataFrame({"Edad (días)": [1, 3, 7], "Resistencia (MPa)": [10.0, 
 20.0, 30.0]}),
     num_rows="dynamic"
 )
