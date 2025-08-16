@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-st.title("Curva de Madurez - Método Simplificado")
+st.title("Calibración estimada de hormigones-IoT Provoleta")
 
 # Inputs
 temp_lab = st.number_input("Temperatura de laboratorio (°C)", value=20.0)
