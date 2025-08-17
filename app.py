@@ -41,8 +41,8 @@ if not edited_data.empty:
     r2 = 1 - (ss_res / ss_tot)
 
     st.markdown(f"### 📌 Resultados")
-    st.markdown(f"**Pendiente (a): {a:.4f}**") 
     st.markdown(f"**Ordenada al origen (b): {b:.4f}**") 
+    st.markdown(f"**Pendiente (a): {a:.4f}**") 
     st.markdown(f"**R²:** {r2:.3f}")
 
     # Gráfico dinámico
