@@ -7,8 +7,13 @@ from io import BytesIO
 
 st.title("Calibración estimada hormigones - IoT Provoleta")
 
+st.markdown("""
+Esta aplicación permite ingresar resultados de ensayos de resistencia a compresión y calcular 
+la relación con la madurez (método de Nurse-Saul).
+""")
+
 # Entradas de temperatura
-temp_lab = st.number_input("Temperatura de laboratorio (°C)", value=20.0, step=0.1)
+temp_lab = st.number_input("Temperatura de laboratorio (°C)", value=23.0, step=0.1)
 temp_datum = st.number_input("Temperatura datum (°C)", value=-10.0, step=0.1)
 
 # Tabla editable
@@ -36,8 +41,8 @@ if not edited_data.empty:
     r2 = 1 - (ss_res / ss_tot)
 
     st.markdown(f"### 📌 Resultados")
-    st.markdown(f"**Pendiente (a):** {a:.3f}") 
-    st.markdown(f"**Ordenada al origen (b):** {b:.3f}") 
+    st.markdown(f"**Pendiente (a):** {a:.4f}**") 
+    st.markdown(f"**Ordenada al origen (b):** {b:.4f}**") 
     st.markdown(f"**R²:** {r2:.3f}")
 
     # Gráfico dinámico
