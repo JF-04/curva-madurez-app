@@ -16,7 +16,7 @@ temp_lab = st.number_input("Temperatura de laboratorio (°C)", value=23.0, step=
 temp_datum = st.number_input("Temperatura datum (°C)", value=-10.0, step=0.1)
 
 st.markdown("""
-Como temperatura datum (°C), usar por defecto -10°C. Caso contrario, determinar experimentalmente de acuerdo con la norma ASTM C1074.
+Nota: Como temperatura datum (°C), usar por defecto -10°C. Caso contrario, determinar experimentalmente de acuerdo con la norma ASTM C1074.
 """)
 
 # Tabla editable
