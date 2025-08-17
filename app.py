@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -40,10 +39,11 @@ if not edited_data.empty:
     ss_tot = np.sum((Y - np.mean(Y)) ** 2)
     r2 = 1 - (ss_res / ss_tot)
 
-    st.markdown(f"### 📌 Resultados")
-    st.markdown(f"**Ordenada al origen (b): {b:.4f}**") 
-    st.markdown(f"**Pendiente (a): {a:.4f}**") 
-    st.markdown(f"**R²:** {r2:.3f}")
+    # Mostrar resultados resaltados en verde con 2 decimales
+    st.markdown("### 📌 Resultados")
+    st.markdown(f"<span style='color:green; font-weight:bold'>Pendiente (a): {a:.2f}</span>", unsafe_allow_html=True)
+    st.markdown(f"<span style='color:green; font-weight:bold'>Ordenada al origen (b): {b:.2f}</span>", unsafe_allow_html=True)
+    st.markdown(f"**R²:** {r2:.2f}")
 
     # Gráfico dinámico
     fig = go.Figure()
@@ -66,7 +66,14 @@ if not edited_data.empty:
     fig.update_layout(
         xaxis_title="Madurez (°C.h)",
         yaxis_title="Resistencia a compresión (MPa)",
-        hovermode="x unified"
+        hovermode="x unified",
+        legend=dict(
+            orientation="h",   # horizontal
+            yanchor="top",
+            y=-0.2,            # debajo del gráfico
+            xanchor="center",
+            x=0.5
+        )
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -75,10 +82,16 @@ if not edited_data.empty:
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         edited_data.to_excel(writer, index=False, sheet_name="Datos")
-        pd.DataFrame({"Pendiente (a)": [a], "Ordenada (b)": [b], "R²": [r2]}).to_excel(writer, index=False, sheet_name="Resultados")
+        pd.DataFrame({
+            "Pendiente (a)": [round(a, 2)],
+            "Ordenada (b)": [round(b, 2)],
+            "R²": [round(r2, 2)]
+        }).to_excel(writer, index=False, sheet_name="Resultados")
     st.download_button(
         label="📥 Descargar resultados en Excel",
         data=output.getvalue(),
         file_name="calibracion_hormigon.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+
