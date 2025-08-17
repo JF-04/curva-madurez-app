@@ -41,17 +41,18 @@ if not edited_df.empty:
     st.success(f"**Pendiente (a): {a:.4f}**")
     st.success(f"**Ordenada al origen (b): {b:.4f}**")
 
-    # Graficar puntos y curva de estimación
+    # Graficar datos experimentales (Madurez vs Resistencia)
     fig, ax = plt.subplots()
-    ax.scatter(X, Y, color="blue", label="Datos experimentales")
+    ax.scatter(edited_df["Madurez"], Y, color="blue", label="Datos experimentales")
 
-    X_fit = np.linspace(min(X), max(X), 100)
-    Y_fit = a * X_fit + b
-    ax.plot(X_fit, Y_fit, color="red", label="Recta de estimación")
+    # Curva estimada: generar valores de madurez y calcular resistencia
+    M_fit = np.linspace(min(edited_df["Madurez"]), max(edited_df["Madurez"]), 200)
+    Y_fit = a * np.log10(M_fit) + b
+    ax.plot(M_fit, Y_fit, color="red", label="Curva estimada")
 
-    ax.set_xlabel("log10(Madurez) [log10(h·°C)]")
+    ax.set_xlabel("Madurez (h·°C)")
     ax.set_ylabel("Resistencia a compresión (MPa)")
-    ax.set_title("Curva de calibración madurez vs resistencia")
+    ax.set_title("Curva de calibración: Madurez vs Resistencia")
     ax.legend()
     ax.grid(True)
 
@@ -59,4 +60,5 @@ if not edited_df.empty:
 
     st.write("### Datos procesados")
     st.dataframe(edited_df)
+
 
