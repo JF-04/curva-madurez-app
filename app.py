@@ -1,5 +1,5 @@
 
-    import streamlit as st
+import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -8,7 +8,7 @@ from io import BytesIO
 st.title("Calibración estimada hormigones - IoT Provoleta")
 
 # Entradas de temperatura
-temp_lab = st.number_input("Temperatura de laboratorio (°C)", value=23.0, step=0.1)
+temp_lab = st.number_input("Temperatura de laboratorio (°C)", value=20.0, step=0.1)
 temp_datum = st.number_input("Temperatura datum (°C)", value=-10.0, step=0.1)
 
 # Tabla editable
@@ -77,6 +77,3 @@ if not edited_data.empty:
         file_name="calibracion_hormigon.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
-
-
