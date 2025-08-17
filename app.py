@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 st.title("Calibración estimada hormigones - IoT Provoleta")
 
@@ -11,7 +11,7 @@ la relación con la madurez (método de Nurse-Saul).
 """)
 
 # Entradas de temperatura
-temp_lab = st.number_input("Temperatura de laboratorio (°C)", value=20.0, step=0.1)
+temp_lab = st.number_input("Temperatura de laboratorio (°C)", value=23.0, step=0.1)
 temp_datum = st.number_input("Temperatura datum (°C)", value=-10.0, step=0.1)
 
 st.write("### Ingresar datos de ensayo")
@@ -41,24 +41,44 @@ if not edited_df.empty:
     st.success(f"**Pendiente (a): {a:.4f}**")
     st.success(f"**Ordenada al origen (b): {b:.4f}**")
 
-    # Graficar datos experimentales (Madurez vs Resistencia)
-    fig, ax = plt.subplots()
-    ax.scatter(edited_df["Madurez"], Y, color="blue", label="Datos experimentales")
-
     # Curva estimada: generar valores de madurez y calcular resistencia
     M_fit = np.linspace(min(edited_df["Madurez"]), max(edited_df["Madurez"]), 200)
     Y_fit = a * np.log10(M_fit) + b
-    ax.plot(M_fit, Y_fit, color="red", label="Curva estimada")
 
-    ax.set_xlabel("Madurez (h·°C)")
-    ax.set_ylabel("Resistencia a compresión (MPa)")
-    ax.set_title("Curva de calibración: Madurez vs Resistencia")
-    ax.legend()
-    ax.grid(True)
+    # Gráfico dinámico con Plotly
+    fig = go.Figure()
 
-    st.pyplot(fig)
+    # Datos experimentales
+    fig.add_trace(go.Scatter(
+        x=edited_df["Madurez"],
+        y=edited_df["Resistencia (MPa)"],
+        mode="markers",
+        name="Datos experimentales",
+        marker=dict(color="blue", size=8),
+        hovertemplate="Madurez: %{x:.1f}<br>Resistencia: %{y:.2f} MPa"
+    ))
+
+    # Curva estimada
+    fig.add_trace(go.Scatter(
+        x=M_fit,
+        y=Y_fit,
+        mode="lines",
+        name="Curva estimada",
+        line=dict(color="red", width=2),
+        hovertemplate="Madurez: %{x:.1f}<br>Resistencia estimada: %{y:.2f} MPa"
+    ))
+
+    fig.update_layout(
+        xaxis_title="Madurez (h·°C)",
+        yaxis_title="Resistencia a compresión (MPa)",
+        title="Curva de calibración: Madurez vs Resistencia",
+        template="plotly_white"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
 
     st.write("### Datos procesados")
     st.dataframe(edited_df)
+
 
 
