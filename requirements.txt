@@ -1,9 +1,13 @@
 streamlit
-pandas
 gspread
 google-auth
 plotly
-xlsxwriter
+pandas
+numpy
+openpyxl
+reportlab
+scikit-learn
+
 
 
 
