@@ -3,6 +3,7 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from io import BytesIO
+import zipfile
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
@@ -13,10 +14,8 @@ from reportlab.lib.styles import getSampleStyleSheet
 # ============================
 st.set_page_config(page_title="Curva de Madurez", layout="centered")
 
-# Nombre de la hoja de Google Sheets
 SHEET_NAME = "CurvaMadurez"
 
-# Credenciales desde secrets.toml en Streamlit Cloud
 scope = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
@@ -44,6 +43,12 @@ except Exception as e:
     st.stop()
 
 # ============================
+# SESIÓN DE ARCHIVOS
+# ============================
+if "files" not in st.session_state:
+    st.session_state["files"] = []  # lista de tuplas (filename, content, mime)
+
+# ============================
 # INTERFAZ
 # ============================
 st.title("📊 Curva de Madurez")
@@ -56,13 +61,18 @@ excel_buffer = BytesIO()
 with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
     df.to_excel(writer, sheet_name="CurvaMadurez", index=False)
 
-st.download_button(
+excel_content = excel_buffer.getvalue()
+excel_name = "curva_madurez.xlsx"
+
+if st.download_button(
     label="⬇️ Descargar Excel",
-    data=excel_buffer.getvalue(),
-    file_name="curva_madurez.xlsx",
+    data=excel_content,
+    file_name=excel_name,
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     key="download_excel"
-)
+):
+    st.session_state["files"].append((excel_name, excel_content,
+                                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
 
 # ============================
 # EXPORTAR A PDF
@@ -72,10 +82,7 @@ doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
 styles = getSampleStyleSheet()
 elements = []
 
-# Título
 elements.append(Paragraph("Curva de Madurez", styles['Heading1']))
-
-# Tabla
 table_data = [df.columns.tolist()] + df.values.tolist()
 table = Table(table_data)
 table.setStyle(TableStyle([
@@ -87,11 +94,31 @@ table.setStyle(TableStyle([
 elements.append(table)
 
 doc.build(elements)
+pdf_content = pdf_buffer.getvalue()
+pdf_name = "curva_madurez.pdf"
 
-st.download_button(
+if st.download_button(
     label="⬇️ Descargar PDF",
-    data=pdf_buffer.getvalue(),
-    file_name="curva_madurez.pdf",
+    data=pdf_content,
+    file_name=pdf_name,
     mime="application/pdf",
     key="download_pdf"
-)
+):
+    st.session_state["files"].append((pdf_name, pdf_content, "application/pdf"))
+
+# ============================
+# DESCARGAR TODOS JUNTOS (ZIP)
+# ============================
+if st.session_state["files"]:
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w") as zipf:
+        for fname, content, _ in st.session_state["files"]:
+            zipf.writestr(fname, content)
+
+    st.download_button(
+        label="⬇️ Descargar todos (ZIP)",
+        data=zip_buffer.getvalue(),
+        file_name="documentos_curva_madurez.zip",
+        mime="application/zip",
+        key="download_zip"
+    )
