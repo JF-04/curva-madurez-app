@@ -10,7 +10,7 @@ from reportlab.lib import colors
 
 # --- Para PDF con Matplotlib (sin Chrome/kaleido) ---
 import matplotlib
-matplotlib.use("Agg")  # backend sin GUI, estable en servidores
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 # --- Google Sheets ---
@@ -19,7 +19,7 @@ from google.oauth2.service_account import Credentials
 
 st.title("Calibración estimada hormigones - IoT Provoleta")
 
-# Título personalizado para informe/hoja
+# Título personalizado
 custom_title = st.text_input("📌 Título del informe/archivo", "Informe de calibración")
 
 st.markdown("""
@@ -27,7 +27,7 @@ Esta aplicación permite ingresar resultados de ensayos de resistencia a compres
 la relación con la madurez (método de Nurse-Saul).
 """)
 
-# Entradas de temperatura
+# Entradas
 temp_lab = st.number_input("Temperatura de laboratorio (°C)", value=23.0, step=0.1)
 temp_datum = st.number_input("Temperatura datum (°C)", value=-10.0, step=0.1)
 
@@ -35,7 +35,7 @@ st.markdown("""
 Nota: Como temperatura datum (°C), usar por defecto -10°C. Caso contrario, determinar experimentalmente de acuerdo con la norma ASTM C1074.
 """)
 
-# Tabla editable
+# Datos iniciales
 st.subheader("Cargar datos experimentales")
 data = pd.DataFrame({
     "Edad (días)": [0.5, 1, 3, 7, 14],
@@ -43,9 +43,11 @@ data = pd.DataFrame({
 })
 edited_data = st.data_editor(data, num_rows="dynamic")
 
+
+# ========= FUNCIONES =========
 def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float, titulo: str) -> bytes:
-    """Genera un PDF con resultados + tabla + gráfico renderizado con Matplotlib (sin kaleido)."""
-    # --- Armar gráfico en Matplotlib ---
+    """Genera un PDF con resultados + tabla + gráfico (Matplotlib + Reportlab)."""
+    # Gráfico en Matplotlib
     fig, ax = plt.subplots(figsize=(6.0, 3.8))
     ax.scatter(edited_df["Madurez"], edited_df["Resistencia (MPa)"], label="Datos experimentales")
     x_fit = np.linspace(float(edited_df["Madurez"].min()), float(edited_df["Madurez"].max()), 200)
@@ -60,7 +62,7 @@ def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float, titulo: 
     plt.close(fig)
     img_buf.seek(0)
 
-    # --- Construir PDF con reportlab ---
+    # PDF con reportlab
     pdf_buf = BytesIO()
     doc = SimpleDocTemplate(pdf_buf, pagesize=A4)
     styles = getSampleStyleSheet()
@@ -110,32 +112,30 @@ def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float, titulo: 
     pdf_buf.seek(0)
     return pdf_buf.getvalue()
 
+
 def exportar_a_gsheets(df: pd.DataFrame, a: float, b: float, r2: float, titulo: str):
     """Crea una planilla en Google Drive y sube datos + resultados. Requiere st.secrets['gcp_service_account']."""
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
     client = gspread.authorize(creds)
 
-    # Crear un nuevo spreadsheet con el título elegido
     sh = client.create(titulo)
     ws_datos = sh.sheet1
     ws_datos.update([df.columns.tolist()] + df.values.tolist())
     ws_res = sh.add_worksheet(title="Resultados", rows="10", cols="3")
     ws_res.update([["Pendiente (a)", "Ordenada (b)", "R²"], [round(a, 2), round(b, 2), round(r2, 2)]])
-    return sh.url  # Devolvemos la URL por si querés mostrarla
+    return sh.url
 
-# ========================
-# CÁLCULOS
-# ========================
+
+# ========= CÁLCULOS =========
 if not edited_data.empty:
-    # Madurez y log10(Madurez)
     madurez_factor = (temp_lab - temp_datum) * 24
     if madurez_factor <= 0:
         st.error("⚠️ (T_lab - T_datum) debe ser > 0 para calcular la madurez.")
         st.stop()
 
     edited_data["Madurez"] = madurez_factor * edited_data["Edad (días)"]
-    edited_data = edited_data[edited_data["Madurez"] > 0]  # evitar log10 de 0 o negativo
+    edited_data = edited_data[edited_data["Madurez"] > 0]
     edited_data["Log10(Madurez)"] = np.log10(edited_data["Madurez"])
 
     if len(edited_data) < 2:
@@ -145,22 +145,19 @@ if not edited_data.empty:
     X = edited_data["Log10(Madurez)"].values
     Y = edited_data["Resistencia (MPa)"].values
 
-    # Ajuste lineal Y = a*X + b
     a, b = np.polyfit(X, Y, 1)
     Y_pred = a * X + b
-
-    # R²
     ss_res = np.sum((Y - Y_pred) ** 2)
     ss_tot = np.sum((Y - np.mean(Y)) ** 2)
     r2 = float(1 - (ss_res / ss_tot)) if ss_tot > 0 else 0.0
 
-    # --- Resultados (resaltados en verde, 2 decimales) ---
+    # Resultados
     st.markdown("### 📌 Resultados")
     st.markdown(f"<span style='color:green; font-weight:bold'>Pendiente (a): {a:.2f}</span>", unsafe_allow_html=True)
     st.markdown(f"<span style='color:green; font-weight:bold'>Ordenada al origen (b): {b:.2f}</span>", unsafe_allow_html=True)
     st.markdown(f"**R²:** {r2:.2f}")
 
-    # --- Gráfico interactivo (Plotly) ---
+    # Gráfico interactivo
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=edited_data["Madurez"], y=edited_data["Resistencia (MPa)"],
@@ -181,7 +178,7 @@ if not edited_data.empty:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- Excel de apoyo (opcional) ---
+    # Excel
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         edited_data.to_excel(writer, index=False, sheet_name="Datos")
@@ -197,7 +194,7 @@ if not edited_data.empty:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # --- PDF (sin kaleido) ---
+    # PDF
     pdf_bytes = generar_pdf(edited_data.copy(), a, b, r2, custom_title)
     st.download_button(
         label="📄 Descargar informe en PDF",
@@ -206,7 +203,7 @@ if not edited_data.empty:
         mime="application/pdf"
     )
 
-    # --- Google Sheets ---
+    # Google Sheets
     with st.expander("Opcional: Exportar a Google Sheets"):
         st.write("Requiere configurar `st.secrets['gcp_service_account']` con credenciales de Service Account.")
         if st.button("📤 Guardar en Google Sheets"):
