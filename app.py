@@ -19,7 +19,7 @@ client = gspread.authorize(creds)
 
 # Abrir la hoja de Google Sheets
 SHEET_NAME = "CurvaMadurez"
-sheet = client.open("Calib provos Streamlit").sheet1
+sheet = client.open(SHEET_NAME).sheet1
 
 # ==============================
 # FUNCIÓN PARA GENERAR PDF
