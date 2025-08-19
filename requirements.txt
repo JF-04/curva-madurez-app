@@ -1,12 +1,9 @@
 streamlit
 pandas
-numpy
-plotly
-openpyxl
-reportlab
-matplotlib
 gspread
 google-auth
+plotly
+xlsxwriter
 
 
 
