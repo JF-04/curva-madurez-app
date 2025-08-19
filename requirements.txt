@@ -2,8 +2,10 @@ streamlit
 pandas
 numpy
 plotly
+reportlab
+openpyxl
 matplotlib
 gspread
 google-auth
-openpyxl
-reportlab
+google-auth-oauthlib
+google-auth-httplib2
