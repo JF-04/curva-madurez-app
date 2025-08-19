@@ -1,128 +1,101 @@
 import streamlit as st
 import pandas as pd
-import gspread
-from google.oauth2.service_account import Credentials
-import plotly.express as px
 import numpy as np
-from sklearn.metrics import r2_score
-import io
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
+import plotly.graph_objects as go
+from io import BytesIO
 
-# --- CONFIGURACIÓN ---
-st.set_page_config(page_title="Curva de Madurez", layout="wide")
-st.title("Curva de Madurez")
+st.title("Calibración estimada hormigones - IoT Provoleta")
 
-# Alcances para Google Sheets
-SCOPES = ["https://spreadsheets.google.com/feeds",
-          "https://www.googleapis.com/auth/drive"]
+st.markdown("""
+Esta aplicación permite ingresar resultados de ensayos de resistencia a compresión y calcular 
+la relación con la madurez (método de Nurse-Saul).
+""")
 
-# Cargar credenciales desde secrets
-credentials = Credentials.from_service_account_info(
-    st.secrets["gcp_service_account"],
-    scopes=SCOPES
-)
+# Entradas de temperatura
+temp_lab = st.number_input("Temperatura de laboratorio (°C)", value=23.0, step=0.1)
+temp_datum = st.number_input("Temperatura datum (°C)", value=-10.0, step=0.1)
 
-client = gspread.authorize(credentials)
+st.markdown("""
+Nota: Como temperatura datum (°C), usar por defecto -10°C. Caso contrario, determinar experimentalmente de acuerdo con la norma ASTM C1074.
+""")
 
-# 👇 Pegar el ID de tu Google Sheet aquí
-SHEET_ID = "1hjOyV_0gmJ8bGs2GsqrmL4hFIB2U_9N4iVbEwFfKJh4"
-sheet = client.open_by_key(SHEET_ID).sheet1
+# Tabla editable
+st.subheader("Cargar datos experimentales")
+data = pd.DataFrame({
+    "Edad (días)": [0.5, 1, 3, 7, 14],
+    "Resistencia (MPa)": [0.0, 5.0, 12.0, 20.0, 28.0]
+})
+edited_data = st.data_editor(data, num_rows="dynamic")
 
-# --- LECTURA DE DATOS ---
-data = sheet.get_all_records()
-if not data:
-    st.warning("La hoja está vacía. Por favor, carga datos en Google Sheets.")
-    st.stop()
+# Calcular madurez y regresión
+if not edited_data.empty:
+    edited_data["Madurez"] = (temp_lab - temp_datum) * 24 * edited_data["Edad (días)"]
+    edited_data["Log10(Madurez)"] = np.log10(edited_data["Madurez"])
 
-df = pd.DataFrame(data)
+    X = edited_data["Log10(Madurez)"].values
+    Y = edited_data["Resistencia (MPa)"].values
 
-# --- EDITOR DE DATOS ---
-st.subheader("Datos experimentales")
-edited_data = st.data_editor(df, num_rows="dynamic")
+    a, b = np.polyfit(X, Y, 1)  # pendiente y ordenada
+    Y_pred = a * X + b
 
-# --- AJUSTE CURVA ---
-if "Madurez" not in edited_data.columns or "Resistencia" not in edited_data.columns:
-    st.error("Tu hoja debe tener columnas llamadas 'Madurez' y 'Resistencia'.")
-    st.stop()
+    # R²
+    ss_res = np.sum((Y - Y_pred) ** 2)
+    ss_tot = np.sum((Y - np.mean(Y)) ** 2)
+    r2 = 1 - (ss_res / ss_tot)
 
-x = edited_data["Madurez"].values
-y = edited_data["Resistencia"].values
+    # Mostrar resultados resaltados en verde con 2 decimales
+    st.markdown("### 📌 Resultados")
+    st.markdown(f"<span style='color:green; font-weight:bold'>Pendiente (a): {a:.2f}</span>", unsafe_allow_html=True)
+    st.markdown(f"<span style='color:green; font-weight:bold'>Ordenada al origen (b): {b:.2f}</span>", unsafe_allow_html=True)
+    st.markdown(f"**R²:** {r2:.2f}")
 
-# Ajuste polinómico (grado 2)
-coef = np.polyfit(x, y, 2)
-poly_eq = np.poly1d(coef)
+    # Gráfico dinámico
+    fig = go.Figure()
 
-# Predicciones
-x_line = np.linspace(min(x), max(x), 100)
-y_line = poly_eq(x_line)
+    # Puntos experimentales
+    fig.add_trace(go.Scatter(
+        x=edited_data["Madurez"], y=edited_data["Resistencia (MPa)"],
+        mode="markers", name="Datos experimentales",
+        marker=dict(size=8, color="blue")
+    ))
 
-# R²
-y_pred = poly_eq(x)
-r2 = r2_score(y, y_pred)
+    # Curva estimada (línea)
+    x_fit = np.linspace(min(edited_data["Madurez"]), max(edited_data["Madurez"]), 100)
+    y_fit = a * np.log10(x_fit) + b
+    fig.add_trace(go.Scatter(
+        x=x_fit, y=y_fit, mode="lines", name="Curva estimada",
+        line=dict(color="red")
+    ))
 
-# --- GRÁFICO ---
-fig = px.scatter(edited_data, x="Madurez", y="Resistencia",
-                 title=f"Curva de Madurez (R² = {r2:.3f})")
+    fig.update_layout(
+        xaxis_title="Madurez (°C.h)",
+        yaxis_title="Resistencia a compresión (MPa)",
+        hovermode="x unified",
+        legend=dict(
+            orientation="h",   # horizontal
+            yanchor="top",
+            y=-0.2,            # debajo del gráfico
+            xanchor="center",
+            x=0.5
+        )
+    )
 
-fig.add_traces(px.line(x=x_line, y=y_line).data)
-fig.update_traces(hovertemplate="Madurez: %{x}<br>Resistencia: %{y}")
-st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
 
-# =====================================================
-# EXPORTAR A EXCEL
-# =====================================================
-excel_buffer = io.BytesIO()
-with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
-    edited_data.to_excel(writer, sheet_name="Datos", index=False)
+    # Exportar resultados
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        edited_data.to_excel(writer, index=False, sheet_name="Datos")
+        pd.DataFrame({
+            "Pendiente (a)": [round(a, 2)],
+            "Ordenada (b)": [round(b, 2)],
+            "R²": [round(r2, 2)]
+        }).to_excel(writer, index=False, sheet_name="Resultados")
+    st.download_button(
+        label="📥 Descargar resultados en Excel",
+        data=output.getvalue(),
+        file_name="calibracion_hormigon.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
-st.download_button(
-    label="⬇️ Descargar Excel",
-    data=excel_buffer.getvalue(),
-    file_name="curva_madurez.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
 
-# =====================================================
-# EXPORTAR A PDF
-# =====================================================
-def generar_pdf(fig, data):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
-    styles = getSampleStyleSheet()
-    story = []
-
-    story.append(Paragraph("Curva de Madurez", styles["Title"]))
-    story.append(Spacer(1, 12))
-
-    # Guardar gráfico como imagen en memoria
-    img_bytes = fig.to_image(format="png")
-    img_buffer = io.BytesIO(img_bytes)
-    story.append(Image(img_buffer, width=400, height=300))
-    story.append(Spacer(1, 12))
-
-    # Tabla de datos
-    table_data = [list(data.columns)] + data.values.tolist()
-    table = Table(table_data)
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-    ]))
-    story.append(table)
-
-    doc.build(story)
-    pdf = buffer.getvalue()
-    buffer.close()
-    return pdf
-
-pdf_file = generar_pdf(fig, edited_data)
-
-st.download_button(
-    label="⬇️ Descargar PDF",
-    data=pdf_file,
-    file_name="curva_madurez.pdf",
-    mime="application/pdf"
-)
