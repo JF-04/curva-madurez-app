@@ -1,130 +1,130 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import gspread
-from google.oauth2.service_account import Credentials
+import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
-import io
+from sklearn.metrics import r2_score
+from io import BytesIO
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.pdfgen import canvas
 
-# ======================
-# CONFIGURACIÓN STREAMLIT
-# ======================
-st.set_page_config(page_title="Curva de Madurez", layout="wide")
-
-# Título fijo y título editable
-col1, col2 = st.columns([4,1])
-with col1:
-    informe_titulo = st.text_input("Título del informe:", "Curva de Madurez")
-with col2:
-    st.markdown("<h3 style='text-align: right;'>IoT Provoleta</h3>", unsafe_allow_html=True)
-
-# ======================
-# CONEXIÓN A GOOGLE SHEETS
-# ======================
-SHEET_NAME = "CurvaMadurez"
-
-creds = Credentials.from_service_account_info(
-    st.secrets["gcp_service_account"],
-    scopes=["https://www.googleapis.com/auth/spreadsheets"]
-)
-client = gspread.authorize(creds)
-
-try:
-    sheet = client.open(SHEET_NAME).sheet1
-    data = sheet.get_all_records()
-    df = pd.DataFrame(data)
-except Exception:
-    st.error("⚠️ No se pudo acceder a la hoja. Verifica permisos o nombre.")
-    st.stop()
-
-if df.empty:
-    st.warning("La hoja está vacía. Carga datos en Google Sheets.")
-    st.stop()
-
-# ======================
-# ANÁLISIS DE REGRESIÓN
-# ======================
-X = df.iloc[:, 0].values.reshape(-1, 1)  # primera columna como X
-y = df.iloc[:, 1].values                 # segunda columna como y
-
-modelo = LinearRegression()
-modelo.fit(X, y)
-
-ordenada_al_origen = modelo.intercept_
-pendiente = modelo.coef_[0]
-
-# ======================
-# MOSTRAR DATOS Y RESULTADOS
-# ======================
-st.subheader("Datos cargados")
-st.dataframe(df)
-
-st.subheader("Resultados de la regresión")
-st.write(f"**Ordenada al origen:** {ordenada_al_origen:.2f}")
-st.write(f"**Pendiente:** {pendiente:.2f}")
-
-# ======================
-# EXPORTAR A EXCEL
-# ======================
-def export_excel():
-    output = io.BytesIO()
+# ==============================
+# Funciones auxiliares
+# ==============================
+def export_to_excel(df, ordenada_al_origen, pendiente, r2):
+    output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="Datos")
+        df.to_excel(writer, sheet_name="Datos", index=False)
+
         resultados = pd.DataFrame({
-            "Métrica": ["Ordenada al origen", "Pendiente"],
-            "Valor": [ordenada_al_origen, pendiente]
+            "Métrica": ["Ordenada al origen", "Pendiente", "R²"],
+            "Valor": [ordenada_al_origen, pendiente, r2]
         })
-        resultados.to_excel(writer, index=False, sheet_name="Resultados")
+        resultados.to_excel(writer, sheet_name="Resultados", index=False)
+
     return output.getvalue()
 
-# ======================
-# EXPORTAR A PDF
-# ======================
-def export_pdf():
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
-    styles = getSampleStyleSheet()
-    story = []
+def export_to_pdf(df, ordenada_al_origen, pendiente, r2, titulo):
+    output = BytesIO()
+    c = canvas.Canvas(output, pagesize=letter)
+    width, height = letter
 
-    # Título
-    story.append(Paragraph(f"<b>{informe_titulo}</b>", styles["Title"]))
-    story.append(Spacer(1, 12))
+    # Logo / título fijo
+    c.setFont("Helvetica-Bold", 12)
+    c.drawRightString(width - 40, height - 40, "IoT Provoleta")
 
-    # Resultados primero
-    story.append(Paragraph(f"<b>Ordenada al origen:</b> {ordenada_al_origen:.2f}", styles["Normal"]))
-    story.append(Paragraph(f"<b>Pendiente:</b> {pendiente:.2f}", styles["Normal"]))
-    story.append(Spacer(1, 12))
+    # Título ingresado por el usuario
+    if titulo:
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(40, height - 80, titulo)
 
-    # Datos de tabla en texto
-    story.append(Paragraph("<b>Datos:</b>", styles["Heading2"]))
+    # Resultados en negrita
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(40, height - 120, f"Ordenada al origen: {ordenada_al_origen:.2f}")
+    c.drawString(40, height - 140, f"Pendiente: {pendiente:.2f}")
+
+    # R² normal
+    c.setFont("Helvetica", 12)
+    c.drawString(40, height - 160, f"R²: {r2:.4f}")
+
+    # Tabla con datos
+    textobject = c.beginText(40, height - 200)
+    textobject.setFont("Helvetica", 10)
+    for col in df.columns:
+        textobject.textLine(col)
+    textobject.textLine("-" * 20)
     for _, row in df.iterrows():
-        story.append(Paragraph(str(row.to_dict()), styles["Normal"]))
+        textobject.textLine(" | ".join(map(str, row.values)))
+    c.drawText(textobject)
 
-    doc.build(story)
-    pdf = buffer.getvalue()
-    buffer.close()
-    return pdf
+    c.showPage()
+    c.save()
+    return output.getvalue()
 
-# ======================
-# BOTONES DE DESCARGA
-# ======================
-col1, col2 = st.columns(2)
+# ==============================
+# App principal
+# ==============================
+st.set_page_config(page_title="Curva de Madurez", layout="wide")
 
-with col1:
-    st.download_button(
-        "⬇️ Descargar Excel",
-        data=export_excel(),
-        file_name="curva_madurez.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+st.title("Curva de Madurez")
 
-with col2:
-    st.download_button(
-        "⬇️ Descargar PDF",
-        data=export_pdf(),
-        file_name="curva_madurez.pdf",
-        mime="application/pdf"
-    )
+uploaded_file = st.file_uploader("📂 Cargar archivo CSV/Excel con datos", type=["csv", "xlsx"])
+
+titulo_informe = st.text_input("Título del informe (opcional)")
+
+if uploaded_file:
+    if uploaded_file.name.endswith("csv"):
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_excel(uploaded_file)
+
+    st.subheader("Datos cargados")
+    st.dataframe(df)
+
+    if df.shape[1] >= 2:
+        x = df.iloc[:, 0].values.reshape(-1, 1)
+        y = df.iloc[:, 1].values
+
+        model = LinearRegression()
+        model.fit(x, y)
+
+        pendiente = model.coef_[0]
+        ordenada_al_origen = model.intercept_
+        y_pred = model.predict(x)
+        r2 = r2_score(y, y_pred)
+
+        st.subheader("Resultados de la regresión")
+        st.write(f"**Ordenada al origen:** {ordenada_al_origen:.2f}")
+        st.write(f"**Pendiente:** {pendiente:.2f}")
+        st.write(f"R²: {r2:.4f}")
+
+        # Gráfico
+        fig, ax = plt.subplots()
+        ax.scatter(x, y, label="Datos")
+        ax.plot(x, y_pred, color="red", label="Regresión")
+        ax.set_xlabel(df.columns[0])
+        ax.set_ylabel(df.columns[1])
+        ax.legend()
+        st.pyplot(fig)
+
+        # Botones de descarga
+        excel_data = export_to_excel(df, ordenada_al_origen, pendiente, r2)
+        pdf_data = export_to_pdf(df, ordenada_al_origen, pendiente, r2, titulo_informe)
+
+        st.download_button(
+            "⬇️ Descargar Excel",
+            data=excel_data,
+            file_name="resultados.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+        st.download_button(
+            "⬇️ Descargar PDF",
+            data=pdf_data,
+            file_name="resultados.pdf",
+            mime="application/pdf"
+        )
+    else:
+        st.warning("⚠️ El archivo debe tener al menos dos columnas numéricas.")
+else:
+    st.info("📌 Cargá un archivo para comenzar.")
