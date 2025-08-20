@@ -1,103 +1,130 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-from io import BytesIO
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
-from reportlab.lib.pagesizes import A4
+import numpy as np
+import gspread
+from google.oauth2.service_account import Credentials
+from sklearn.linear_model import LinearRegression
+import io
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import colors
-import os
 
-# Carpeta temporal en Streamlit Cloud
-OUTPUT_DIR = "generated_files"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+# ======================
+# CONFIGURACIÓN STREAMLIT
+# ======================
+st.set_page_config(page_title="Curva de Madurez", layout="wide")
 
-st.set_page_config(page_title="Curva de Madurez", layout="centered")
+# Título fijo y título editable
+col1, col2 = st.columns([4,1])
+with col1:
+    informe_titulo = st.text_input("Título del informe:", "Curva de Madurez")
+with col2:
+    st.markdown("<h3 style='text-align: right;'>IoT Provoleta</h3>", unsafe_allow_html=True)
 
-# =====================
-# Función generar PDF
-# =====================
-def generar_pdf(fig, data, titulo_informe):
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
+# ======================
+# CONEXIÓN A GOOGLE SHEETS
+# ======================
+SHEET_NAME = "CurvaMadurez"
+
+creds = Credentials.from_service_account_info(
+    st.secrets["gcp_service_account"],
+    scopes=["https://www.googleapis.com/auth/spreadsheets"]
+)
+client = gspread.authorize(creds)
+
+try:
+    sheet = client.open(SHEET_NAME).sheet1
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
+except Exception:
+    st.error("⚠️ No se pudo acceder a la hoja. Verifica permisos o nombre.")
+    st.stop()
+
+if df.empty:
+    st.warning("La hoja está vacía. Carga datos en Google Sheets.")
+    st.stop()
+
+# ======================
+# ANÁLISIS DE REGRESIÓN
+# ======================
+X = df.iloc[:, 0].values.reshape(-1, 1)  # primera columna como X
+y = df.iloc[:, 1].values                 # segunda columna como y
+
+modelo = LinearRegression()
+modelo.fit(X, y)
+
+ordenada_al_origen = modelo.intercept_
+pendiente = modelo.coef_[0]
+
+# ======================
+# MOSTRAR DATOS Y RESULTADOS
+# ======================
+st.subheader("Datos cargados")
+st.dataframe(df)
+
+st.subheader("Resultados de la regresión")
+st.write(f"**Ordenada al origen:** {ordenada_al_origen:.2f}")
+st.write(f"**Pendiente:** {pendiente:.2f}")
+
+# ======================
+# EXPORTAR A EXCEL
+# ======================
+def export_excel():
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="Datos")
+        resultados = pd.DataFrame({
+            "Métrica": ["Ordenada al origen", "Pendiente"],
+            "Valor": [ordenada_al_origen, pendiente]
+        })
+        resultados.to_excel(writer, index=False, sheet_name="Resultados")
+    return output.getvalue()
+
+# ======================
+# EXPORTAR A PDF
+# ======================
+def export_pdf():
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
-    elementos = []
+    story = []
 
-    # Título fijo a la derecha
-    elementos.append(Paragraph("<para alignment='right'><b>IoT Provoleta</b></para>", styles['Normal']))
-    elementos.append(Spacer(1, 12))
+    # Título
+    story.append(Paragraph(f"<b>{informe_titulo}</b>", styles["Title"]))
+    story.append(Spacer(1, 12))
 
-    # Título personalizado
-    if titulo_informe:
-        elementos.append(Paragraph(f"<b>{titulo_informe}</b>", styles['Title']))
-        elementos.append(Spacer(1, 12))
+    # Resultados primero
+    story.append(Paragraph(f"<b>Ordenada al origen:</b> {ordenada_al_origen:.2f}", styles["Normal"]))
+    story.append(Paragraph(f"<b>Pendiente:</b> {pendiente:.2f}", styles["Normal"]))
+    story.append(Spacer(1, 12))
 
-    # Tabla de parámetros clave
-    ordenada = data["Ordenada al origen"].iloc[0]
-    pendiente = data["Pendiente"].iloc[0]
-    tabla = Table(
-        [["<b>Ordenada al origen</b>", f"{ordenada:.4f}"],
-         ["<b>Pendiente</b>", f"{pendiente:.4f}"]],
-        colWidths=[150, 150],
-        hAlign='LEFT'
+    # Datos de tabla en texto
+    story.append(Paragraph("<b>Datos:</b>", styles["Heading2"]))
+    for _, row in df.iterrows():
+        story.append(Paragraph(str(row.to_dict()), styles["Normal"]))
+
+    doc.build(story)
+    pdf = buffer.getvalue()
+    buffer.close()
+    return pdf
+
+# ======================
+# BOTONES DE DESCARGA
+# ======================
+col1, col2 = st.columns(2)
+
+with col1:
+    st.download_button(
+        "⬇️ Descargar Excel",
+        data=export_excel(),
+        file_name="curva_madurez.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-    tabla.setStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
-        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 11),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-    ])
-    elementos.append(tabla)
-    elementos.append(Spacer(1, 20))
 
-    # Insertar gráfico como imagen
-    img_buffer = BytesIO()
-    fig.write_image(img_buffer, format="png")
-    img_buffer.seek(0)
-
-    from reportlab.platypus import Image
-    elementos.append(Image(img_buffer, width=400, height=300))
-
-    doc.build(elementos)
-    buffer.seek(0)
-    return buffer
-
-# =====================
-# App
-# =====================
-st.title("Curva de Madurez")
-
-# Título dinámico del informe
-titulo_informe = st.text_input("Título del informe", "")
-
-# Datos de ejemplo (reemplazar por datos de Google Sheets si aplica)
-df = pd.DataFrame({
-    "X": [1, 2, 3, 4, 5],
-    "Y": [2, 4.1, 6, 7.9, 10.2],
-})
-df["Ordenada al origen"] = [1.5]
-df["Pendiente"] = [2.05]
-
-fig = px.scatter(df, x="X", y="Y", trendline="ols")
-
-# Exportar Excel
-excel_buffer = BytesIO()
-df.to_excel(excel_buffer, index=False)
-excel_buffer.seek(0)
-excel_path = os.path.join(OUTPUT_DIR, "reporte.xlsx")
-with open(excel_path, "wb") as f:
-    f.write(excel_buffer.getvalue())
-
-# Exportar PDF
-pdf_buffer = generar_pdf(fig, df, titulo_informe)
-pdf_path = os.path.join(OUTPUT_DIR, "reporte.pdf")
-with open(pdf_path, "wb") as f:
-    f.write(pdf_buffer.getvalue())
-
-# Botones de descarga
-st.download_button("⬇️ Descargar Excel", data=excel_buffer, file_name="reporte.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-st.download_button("⬇️ Descargar PDF", data=pdf_buffer, file_name="reporte.pdf", mime="application/pdf")
-
-st.success("✅ Archivos generados y guardados en la carpeta interna de Streamlit.")
+with col2:
+    st.download_button(
+        "⬇️ Descargar PDF",
+        data=export_pdf(),
+        file_name="curva_madurez.pdf",
+        mime="application/pdf"
+    )
