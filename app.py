@@ -15,6 +15,9 @@ import matplotlib.pyplot as plt
 
 st.title("Calibración estimada hormigones - IoT Provoleta")
 
+# Título personalizado para informe/hoja
+custom_title = st.text_input("📌 Título del informe/archivo", "Informe de calibración")
+
 st.markdown("""
 Esta aplicación permite ingresar resultados de ensayos de resistencia a compresión y calcular 
 la relación con la madurez (método de Nurse-Saul).
@@ -74,7 +77,7 @@ def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float) -> bytes
     res_tab.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 1), colors.lightgrey),  # gris en pendientes
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, 1), "Helvetica-Bold"),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
     ]))
     story.append(res_tab)
@@ -155,27 +158,7 @@ if not edited_data.empty:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- Excel con datos, resultados y gráfico ---
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        edited_data.to_excel(writer, index=False, sheet_name="Datos")
-        pd.DataFrame({
-            "Pendiente (a)": [round(a, 2)],
-            "Ordenada (b)": [round(b, 2)],
-            "R²": [round(r2, 2)]
-        }).to_excel(writer, index=False, sheet_name="Resultados")
-
-        # Gráfico en Excel
-        workbook = writer.book
-        worksheet = workbook.create_sheet("Gráfico")
-        chart = workbook.create_chartsheet()
-    st.download_button(
-        label="📥 Descargar resultados en Excel",
-        data=output.getvalue(),
-        file_name="calibracion_hormigon.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
+   
     # --- PDF ---
     pdf_bytes = generar_pdf(edited_data.copy(), a, b, r2)
     st.download_button(
