@@ -158,27 +158,7 @@ if not edited_data.empty:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- Excel con datos, resultados y gráfico ---
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        edited_data.to_excel(writer, index=False, sheet_name="Datos")
-        pd.DataFrame({
-            "Pendiente (a)": [round(a, 2)],
-            "Ordenada (b)": [round(b, 2)],
-            "R²": [round(r2, 2)]
-        }).to_excel(writer, index=False, sheet_name="Resultados")
-
-        # Gráfico en Excel
-        workbook = writer.book
-        worksheet = workbook.create_sheet("Gráfico")
-        chart = workbook.create_chartsheet()
-    st.download_button(
-        label="📥 Descargar resultados en Excel",
-        data=output.getvalue(),
-        file_name="calibracion_hormigon.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
+   
     # --- PDF ---
     pdf_bytes = generar_pdf(edited_data.copy(), a, b, r2)
     st.download_button(
