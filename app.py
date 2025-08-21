@@ -1,79 +1,118 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.io as pio
-import io
+import gspread
+from google.oauth2.service_account import Credentials
 from fpdf import FPDF
+import io
 
-# =============================
-# Configuración inicial
-# =============================
+# ==============================
+# CONFIG
+# ==============================
 st.set_page_config(page_title="Curva de Madurez", layout="wide")
 
-# =============================
-# Entrada de datos
-# =============================
+SHEET_NAME = "CurvaMadurez"
+
+# ==============================
+# CONEXIÓN GOOGLE SHEETS
+# ==============================
+scope = ["https://spreadsheets.google.com/feeds",
+         "https://www.googleapis.com/auth/drive"]
+creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+client = gspread.authorize(creds)
+
+try:
+    sheet = client.open(SHEET_NAME).sheet1
+    data = sheet.get_all_records()
+    df = pd.DataFrame(data)
+except Exception as e:
+    st.error(f"No se pudo acceder a la hoja: {e}")
+    df = pd.DataFrame()
+
+# ==============================
+# TÍTULO Y SIDEBAR
+# ==============================
 st.title("Curva de Madurez")
 
-# Campo para ingresar el título del informe
-titulo_informe = st.text_input("Ingrese un título para el informe:")
+# título editable para el informe
+titulo_informe = st.text_input("📄 Título del informe", "Informe de Resultados")
 
-# Ejemplo de dataframe (reemplazar por Google Sheets o carga CSV)
-data = pd.DataFrame({
-    "X": [1, 2, 3, 4, 5],
-    "Y": [2, 4, 5, 4, 5]
-})
+# logo fijo arriba a la derecha (IoT Provoleta)
+st.markdown(
+    """
+    <div style="position: absolute; top: 15px; right: 20px; font-weight: bold; font-size: 18px;">
+        IoT Provoleta
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-# =============================
-# Gráfico
-# =============================
-fig = px.scatter(data, x="X", y="Y", trendline="ols", title="Curva de Madurez")
-st.plotly_chart(fig, use_container_width=True)
+# ==============================
+# GRÁFICO
+# ==============================
+if not df.empty:
+    fig = px.scatter(df, x="origen", y="pendiente", title="Curva de Madurez", trendline="ols")
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.warning("La hoja está vacía. Por favor, carga datos en Google Sheets.")
 
-# =============================
-# Exportar PDF
-# =============================
-def generar_pdf(fig, data, titulo_informe):
-    buffer = io.BytesIO()
-    img_buffer = io.BytesIO()
-    pio.write_image(fig, img_buffer, format="png")
-
+# ==============================
+# GENERAR PDF
+# ==============================
+def generar_pdf(titulo, datos):
     pdf = FPDF()
     pdf.add_page()
 
-    # Título cargado por el usuario
-    if titulo_informe:
-        pdf.set_font("Arial", 'B', 14)
-        pdf.cell(0, 10, titulo_informe, ln=True, align="C")
+    # Título principal
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(200, 10, titulo, ln=True, align="C")
 
-    # Texto fijo IoT Provoleta arriba a la derecha
-    pdf.set_font("Arial", 'I', 10)
-    pdf.set_xy(-40, 10)
-    pdf.cell(0, 10, "IoT Provoleta", align="R")
+    pdf.ln(10)
 
-    # Gráfico
-    pdf.image(img_buffer, x=10, y=30, w=180)
+    # Tabla de datos
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(95, 10, "Origen", border=1, align="C")
+    pdf.cell(95, 10, "Pendiente", border=1, align="C")
+    pdf.ln()
 
-    # Cálculos de regresión
-    results = px.get_trendline_results(fig)
-    if not results.empty:
-        model = results.iloc[0]["px_fit_results"]
-        pendiente = model.params[1]
-        ordenada = model.params[0]
+    pdf.set_font("Arial", "", 12)
+    for _, row in datos.iterrows():
+        pdf.cell(95, 10, str(row["origen"]), border=1, align="C")
+        pdf.cell(95, 10, str(row["pendiente"]), border=1, align="C")
+        pdf.ln()
 
-        pdf.ln(95)
-        pdf.set_font("Arial", 'B', 12)
-        pdf.cell(0, 10, f"Ordenada al origen: {ordenada:.2f}", ln=True)
-        pdf.cell(0, 10, f"Pendiente: {pendiente:.2f}", ln=True)
-
+    buffer = io.BytesIO()
     pdf.output(buffer)
     buffer.seek(0)
     return buffer
 
-# Botón de descarga PDF
-if st.button("📄 Exportar a PDF"):
-    try:
-        pdf_file = generar_pdf(fig, data, titulo_informe)
-        st.download_button("⬇️ Descargar informe PDF", data=pdf_file, file_name="curva_madurez.pdf", mime="application/pdf")
-    except Exception as e:
-        st.error(f"⚠️ Error al exportar PDF: {e}")
+# ==============================
+# BOTONES DESCARGA
+# ==============================
+col1, col2 = st.columns(2)
+
+with col1:
+    if not df.empty:
+        pdf_file = generar_pdf(titulo_informe, df)
+        st.download_button(
+            "⬇️ Descargar PDF",
+            data=pdf_file,
+            file_name="informe.pdf",
+            mime="application/pdf",
+            key="download_pdf"
+        )
+
+with col2:
+    if not df.empty:
+        excel_file = io.BytesIO()
+        with pd.ExcelWriter(excel_file, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="CurvaMadurez")
+        excel_file.seek(0)
+
+        st.download_button(
+            "⬇️ Descargar Excel",
+            data=excel_file,
+            file_name="informe.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_excel"
+        )
