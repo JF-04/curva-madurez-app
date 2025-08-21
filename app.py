@@ -163,7 +163,7 @@ if not edited_data.empty:
         hovermode="x unified",
         legend=dict(
             orientation="h",
-            yanchor="bottom", y=-0.4,
+            yanchor="bottom", y=-0.3,
             xanchor="center", x=0.5
         )
     )
