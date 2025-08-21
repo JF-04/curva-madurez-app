@@ -64,8 +64,6 @@ def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float) -> bytes
 
     story.append(Paragraph(titulo, styles["Title"]))
     story.append(Spacer(1, 8))
-    story.append(Paragraph("IoT Provoleta", styles["Title"]))
-    story.append(Spacer(11, 13))
     story.append(Paragraph(f"Temperatura laboratorio: {temp_lab:.1f} °C", styles["Normal"]))
     story.append(Paragraph(f"Temperatura datum: {temp_datum:.1f} °C", styles["Normal"]))
     story.append(Spacer(1, 10))
