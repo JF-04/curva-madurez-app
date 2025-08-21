@@ -1,136 +1,189 @@
 import streamlit as st
 import pandas as pd
-import gspread
-from google.oauth2.service_account import Credentials
-import plotly.express as px
-from sklearn.metrics import r2_score
+import numpy as np
+import plotly.graph_objects as go
 from io import BytesIO
-import xlsxwriter
-from fpdf import FPDF
-import os
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 
-# ==========================
-# CONFIG
-# ==========================
-st.set_page_config(page_title="Curva de Madurez", layout="wide")
-st.title("Curva de Madurez")
+# --- Para PDF con Matplotlib ---
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
-SHEET_NAME = "CurvaMadurez"
+st.title("Calibración estimada hormigones - IoT Provoleta")
 
-# ==========================
-# GOOGLE SHEETS
-# ==========================
-try:
-    creds = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"],
-    )
-    client = gspread.authorize(creds)
-    sheet = client.open(SHEET_NAME).sheet1
-    data = sheet.get_all_records()
-    df = pd.DataFrame(data)
+# Título personalizado para informe/hoja
+custom_title = st.text_input("📌 Título del informe/archivo", "Informe de calibración")
 
-    # Normalizar nombres de columnas
-    df.columns = [c.strip().lower() for c in df.columns]
+st.markdown("""
+Esta aplicación permite ingresar resultados de ensayos de resistencia a compresión y calcular 
+la relación con la madurez (método de Nurse-Saul).
+""")
 
-except Exception as e:
-    st.error(f"No se pudo acceder a la hoja: {e}")
-    df = pd.DataFrame()
+# Entradas
+temp_lab = st.number_input("Temperatura de laboratorio (°C)", value=23.0, step=0.1)
+temp_datum = st.number_input("Temperatura datum (°C)", value=-10.0, step=0.1)
 
-# ==========================
-# CARGA DE TÍTULO
-# ==========================
-titulo_informe = st.text_input("Título del informe", "Informe de Curva de Madurez")
+st.markdown("""
+Nota: Como temperatura datum (°C), usar por defecto -10°C. Caso contrario, determinar experimentalmente de acuerdo con la norma ASTM C1074.
+""")
 
-# ==========================
-# VISUALIZACIÓN
-# ==========================
-if not df.empty and "origen" in df.columns and "pendiente" in df.columns:
-    fig = px.scatter(
-        df,
-        x="origen",
-        y="pendiente",
-        title="Curva de Madurez",
-        trendline="ols"
+# Tabla editable
+st.subheader("Cargar datos experimentales")
+data = pd.DataFrame({
+    "Edad (días)": [0.5, 1, 3, 7, 14],
+    "Resistencia (MPa)": [0.0, 5.0, 12.0, 20.0, 28.0]
+})
+edited_data = st.data_editor(data, num_rows="dynamic")
+
+def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float) -> bytes:
+    """Genera un PDF con resultados + tabla + gráfico renderizado."""
+    # --- Gráfico Matplotlib ---
+    fig, ax = plt.subplots(figsize=(6.0, 3.8))
+    ax.scatter(edited_df["Madurez"], edited_df["Resistencia (MPa)"], label="Datos experimentales", color="blue")
+    x_fit = np.linspace(float(edited_df["Madurez"].min()), float(edited_df["Madurez"].max()), 200)
+    y_fit = a * np.log10(x_fit) + b
+    ax.plot(x_fit, y_fit, label="Curva estimada", color="red", linewidth=2)
+    ax.set_xlabel("Madurez (°C·h)")
+    ax.set_ylabel("Resistencia a compresión (MPa)")
+    ax.legend(loc="best")
+    img_buf = BytesIO()
+    plt.tight_layout()
+    plt.savefig(img_buf, format="png", dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    img_buf.seek(0)
+
+    # --- Construir PDF ---
+    pdf_buf = BytesIO()
+    doc = SimpleDocTemplate(pdf_buf, pagesize=A4)
+    styles = getSampleStyleSheet()
+    story = []
+
+    story.append(Paragraph("IoT Provoleta", styles["Title"]))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph(f"Temperatura laboratorio: {temp_lab:.1f} °C", styles["Normal"]))
+    story.append(Paragraph(f"Temperatura datum: {temp_datum:.1f} °C", styles["Normal"]))
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph("📌 Resultados de la regresión", styles["Heading2"]))
+    res_tab = Table([
+        ["Pendiente (a)", f"{a:.2f}"],
+        ["Ordenada al origen (b)", f"{b:.2f}"],
+        ["R²", f"{r2:.2f}"],
+    ], hAlign="LEFT")
+    res_tab.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 1), colors.lightgrey),  # gris en pendientes
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+    ]))
+    story.append(res_tab)
+    story.append(Spacer(1, 12))
+
+    story.append(Paragraph("📊 Datos experimentales", styles["Heading2"]))
+    df_round = edited_df.copy()
+    df_round = df_round[["Edad (días)", "Resistencia (MPa)", "Madurez", "Log10(Madurez)"]].round(2)
+    tabla_datos = [df_round.columns.tolist()] + df_round.values.tolist()
+    t = Table(tabla_datos, hAlign="CENTER")
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),  # gris en encabezado
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.black),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 12))
+
+    story.append(Paragraph("📈 Gráfico Madurez vs Resistencia", styles["Heading2"]))
+    story.append(Image(img_buf, width=430, height=270))
+
+    doc.build(story)
+    pdf_buf.seek(0)
+    return pdf_buf.getvalue()
+
+# ========================
+# CÁLCULOS
+# ========================
+if not edited_data.empty:
+    # Madurez
+    madurez_factor = (temp_lab - temp_datum) * 24
+    if madurez_factor <= 0:
+        st.error("⚠️ (T_lab - T_datum) debe ser > 0 para calcular la madurez.")
+        st.stop()
+
+    edited_data["Madurez"] = madurez_factor * edited_data["Edad (días)"]
+    edited_data = edited_data[edited_data["Madurez"] > 0]
+    edited_data["Log10(Madurez)"] = np.log10(edited_data["Madurez"])
+
+    if len(edited_data) < 2:
+        st.info("Cargá al menos dos puntos válidos para ajustar la regresión.")
+        st.stop()
+
+    X = edited_data["Log10(Madurez)"].values
+    Y = edited_data["Resistencia (MPa)"].values
+
+    a, b = np.polyfit(X, Y, 1)
+    Y_pred = a * X + b
+
+    ss_res = np.sum((Y - Y_pred) ** 2)
+    ss_tot = np.sum((Y - np.mean(Y)) ** 2)
+    r2 = float(1 - (ss_res / ss_tot)) if ss_tot > 0 else 0.0
+
+    st.markdown("### 📌 Resultados")
+    st.markdown(f"<span style='color:green; font-weight:bold'>Pendiente (a): {a:.2f}</span>", unsafe_allow_html=True)
+    st.markdown(f"<span style='color:green; font-weight:bold'>Ordenada al origen (b): {b:.2f}</span>", unsafe_allow_html=True)
+    st.markdown(f"**R²:** {r2:.2f}")
+
+    # --- Gráfico interactivo Plotly ---
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=edited_data["Madurez"], y=edited_data["Resistencia (MPa)"],
+        mode="markers", name="Datos experimentales",
+        marker=dict(size=8, color="blue")
+    ))
+    x_fit_plot = np.linspace(float(edited_data["Madurez"].min()), float(edited_data["Madurez"].max()), 200)
+    y_fit_plot = a * np.log10(x_fit_plot) + b
+    fig.add_trace(go.Scatter(
+        x=x_fit_plot, y=y_fit_plot, mode="lines", name="Curva estimada",
+        line=dict(color="red")
+    ))
+    fig.update_layout(
+        xaxis_title="Madurez (°C·h)",
+        yaxis_title="Resistencia a compresión (MPa)",
+        hovermode="x unified"
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Calcular R²
-    if "pendiente" in df.columns and "origen" in df.columns:
-        try:
-            import statsmodels.api as sm
-            X = df["origen"]
-            y = df["pendiente"]
-            X_const = sm.add_constant(X)
-            model = sm.OLS(y, X_const).fit()
-            r2 = model.rsquared
-            st.metric("R²", f"{r2:.4f}")
-        except Exception:
-            st.warning("No se pudo calcular R²")
-
-else:
-    st.warning("La hoja no tiene las columnas requeridas: 'origen' y 'pendiente'")
-
-# ==========================
-# EXPORTAR EXCEL
-# ==========================
-def export_excel(df):
+    # --- Excel con datos, resultados y gráfico ---
     output = BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="Curva")
-    return output.getvalue()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        edited_data.to_excel(writer, index=False, sheet_name="Datos")
+        pd.DataFrame({
+            "Pendiente (a)": [round(a, 2)],
+            "Ordenada (b)": [round(b, 2)],
+            "R²": [round(r2, 2)]
+        }).to_excel(writer, index=False, sheet_name="Resultados")
 
-# ==========================
-# EXPORTAR PDF
-# ==========================
-def export_pdf(df, titulo_informe):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 12)
+        # Gráfico en Excel
+        workbook = writer.book
+        worksheet = workbook.create_sheet("Gráfico")
+        chart = workbook.create_chartsheet()
+    st.download_button(
+        label="📥 Descargar resultados en Excel",
+        data=output.getvalue(),
+        file_name="calibracion_hormigon.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
-    # Encabezado
-    pdf.cell(200, 10, "IoT Provoleta", ln=True, align="R")
-    pdf.ln(5)
-
-    # Título dinámico
-    pdf.set_font("Arial", "B", 14)
-    pdf.cell(200, 10, titulo_informe, ln=True, align="C")
-    pdf.ln(10)
-
-    # Contenido tabla
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(90, 10, "Origen", 1, 0, "C")
-    pdf.cell(90, 10, "Pendiente", 1, 1, "C")
-
-    pdf.set_font("Arial", "", 12)
-    for _, row in df.iterrows():
-        pdf.cell(90, 10, str(row["origen"]), 1, 0, "C")
-        pdf.cell(90, 10, str(row["pendiente"]), 1, 1, "C")
-
-    return pdf.output(dest="S").encode("latin-1")
-
-# ==========================
-# BOTONES DE DESCARGA
-# ==========================
-if not df.empty:
-    col1, col2 = st.columns(2)
-
-    with col1:
-        excel_data = export_excel(df)
-        st.download_button(
-            label="⬇️ Descargar Excel",
-            data=excel_data,
-            file_name="curva_madurez.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="excel"
-        )
-
-    with col2:
-        pdf_data = export_pdf(df, titulo_informe)
-        st.download_button(
-            label="⬇️ Descargar PDF",
-            data=pdf_data,
-            file_name="curva_madurez.pdf",
-            mime="application/pdf",
-            key="pdf"
-        )
+    # --- PDF ---
+    pdf_bytes = generar_pdf(edited_data.copy(), a, b, r2)
+    st.download_button(
+        label="📄 Descargar informe en PDF",
+        data=pdf_bytes,
+        file_name="informe_calibracion.pdf",
+        mime="application/pdf"
+    )
