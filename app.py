@@ -77,7 +77,7 @@ def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float) -> bytes
     res_tab.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 1), colors.lightgrey),  # gris en pendientes
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, 1), "Helvetica-Bold"),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
     ]))
     story.append(res_tab)
