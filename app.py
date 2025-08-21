@@ -161,7 +161,13 @@ if not edited_data.empty:
         xaxis_title="Madurez (°C·h)",
         yaxis_title="Resistencia a compresión (MPa)",
         hovermode="x unified"
+        legend=dict(
+            orientation="h",
+            yanchor="bottom", y=-0.4,
+            xanchor="center", x=0.5
+        )
     )
+
     st.plotly_chart(fig, use_container_width=True)
 
     # --- PDF ---
