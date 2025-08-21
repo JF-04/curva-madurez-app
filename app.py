@@ -62,8 +62,10 @@ def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float) -> bytes
     styles = getSampleStyleSheet()
     story = []
 
-    story.append(Paragraph("IoT Provoleta", styles["Title"]))
+    # Título del informe (desde la app)
+    story.append(Paragraph(custom_title, styles["Title"]))
     story.append(Spacer(1, 8))
+
     story.append(Paragraph(f"Temperatura laboratorio: {temp_lab:.1f} °C", styles["Normal"]))
     story.append(Paragraph(f"Temperatura datum: {temp_datum:.1f} °C", styles["Normal"]))
     story.append(Spacer(1, 10))
@@ -75,7 +77,7 @@ def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float) -> bytes
         ["R²", f"{r2:.2f}"],
     ], hAlign="LEFT")
     res_tab.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 1), colors.lightgrey),  # gris en pendientes
+        ("BACKGROUND", (0, 0), (-1, 1), colors.lightgrey),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("FONTNAME", (0, 0), (-1, 1), "Helvetica-Bold"),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
@@ -89,7 +91,7 @@ def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float) -> bytes
     tabla_datos = [df_round.columns.tolist()] + df_round.values.tolist()
     t = Table(tabla_datos, hAlign="CENTER")
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),  # gris en encabezado
+        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
@@ -100,6 +102,10 @@ def generar_pdf(edited_df: pd.DataFrame, a: float, b: float, r2: float) -> bytes
 
     story.append(Paragraph("📈 Gráfico Madurez vs Resistencia", styles["Heading2"]))
     story.append(Image(img_buf, width=430, height=270))
+
+    # Marca IoT Provoleta® abajo a la derecha
+    story.append(Spacer(1, 30))
+    story.append(Paragraph("<para align='right'>IoT Provoleta®</para>", styles["Normal"]))
 
     doc.build(story)
     pdf_buf.seek(0)
@@ -158,7 +164,6 @@ if not edited_data.empty:
     )
     st.plotly_chart(fig, use_container_width=True)
 
-   
     # --- PDF ---
     pdf_bytes = generar_pdf(edited_data.copy(), a, b, r2)
     st.download_button(
