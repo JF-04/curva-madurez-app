@@ -160,7 +160,7 @@ if not edited_data.empty:
     fig.update_layout(
         xaxis_title="Madurez (°C·h)",
         yaxis_title="Resistencia a compresión (MPa)",
-        hovermode="x unified"
+        hovermode="x unified",
         legend=dict(
             orientation="h",
             yanchor="bottom", y=-0.4,
