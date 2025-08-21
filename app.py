@@ -161,7 +161,7 @@ if not edited_data.empty:
         xaxis_title="Madurez (°C·h)",
         yaxis_title="Resistencia a compresión (MPa)",
         hovermode="x unified"
-            legend=dict(
+        legend=dict(
             orientation="h",
             yanchor="bottom", y=-0.4,
             xanchor="center", x=0.5
