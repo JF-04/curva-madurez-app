@@ -145,37 +145,23 @@ if not edited_data.empty:
     st.markdown(f"**R²:** {r2:.2f}")
 
     # --- Gráfico interactivo Plotly ---
-if not edited_data.empty:
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=edited_data["Madurez (°C·h)"], y=edited_data["Resistencia (MPa)"],
+        x=edited_data["Madurez"], y=edited_data["Resistencia (MPa)"],
         mode="markers", name="Datos experimentales",
         marker=dict(size=8, color="blue")
     ))
-
-    x_fit_plot = np.linspace(
-        float(edited_data["Madurez (°C·h)"].min()),
-        float(edited_data["Madurez (°C·h)"].max()), 200
-    )
+    x_fit_plot = np.linspace(float(edited_data["Madurez"].min()), float(edited_data["Madurez"].max()), 200)
     y_fit_plot = a * np.log10(x_fit_plot) + b
-
     fig.add_trace(go.Scatter(
         x=x_fit_plot, y=y_fit_plot, mode="lines", name="Curva estimada",
         line=dict(color="red")
     ))
-
-
     fig.update_layout(
         xaxis_title="Madurez (°C·h)",
         yaxis_title="Resistencia a compresión (MPa)",
-        hovermode="x unified",
-        legend=dict(
-            orientation="h",
-            yanchor="bottom", y=-0.4,
-            xanchor="center", x=0.5
-        )
+        hovermode="x unified"
     )
-
     st.plotly_chart(fig, use_container_width=True)
 
     # --- PDF ---
