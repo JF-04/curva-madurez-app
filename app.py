@@ -1,118 +1,136 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import gspread
 from google.oauth2.service_account import Credentials
+import plotly.express as px
+from sklearn.metrics import r2_score
+from io import BytesIO
+import xlsxwriter
 from fpdf import FPDF
-import io
+import os
 
-# ==============================
+# ==========================
 # CONFIG
-# ==============================
+# ==========================
 st.set_page_config(page_title="Curva de Madurez", layout="wide")
+st.title("Curva de Madurez")
 
 SHEET_NAME = "CurvaMadurez"
 
-# ==============================
-# CONEXIÓN GOOGLE SHEETS
-# ==============================
-scope = ["https://spreadsheets.google.com/feeds",
-         "https://www.googleapis.com/auth/drive"]
-creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
-client = gspread.authorize(creds)
-
+# ==========================
+# GOOGLE SHEETS
+# ==========================
 try:
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"],
+    )
+    client = gspread.authorize(creds)
     sheet = client.open(SHEET_NAME).sheet1
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
+
+    # Normalizar nombres de columnas
+    df.columns = [c.strip().lower() for c in df.columns]
+
 except Exception as e:
     st.error(f"No se pudo acceder a la hoja: {e}")
     df = pd.DataFrame()
 
-# ==============================
-# TÍTULO Y SIDEBAR
-# ==============================
-st.title("Curva de Madurez")
+# ==========================
+# CARGA DE TÍTULO
+# ==========================
+titulo_informe = st.text_input("Título del informe", "Informe de Curva de Madurez")
 
-# título editable para el informe
-titulo_informe = st.text_input("📄 Título del informe", "Informe de Resultados")
-
-# logo fijo arriba a la derecha (IoT Provoleta)
-st.markdown(
-    """
-    <div style="position: absolute; top: 15px; right: 20px; font-weight: bold; font-size: 18px;">
-        IoT Provoleta
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-# ==============================
-# GRÁFICO
-# ==============================
-if not df.empty:
-    fig = px.scatter(df, x="origen", y="pendiente", title="Curva de Madurez", trendline="ols")
+# ==========================
+# VISUALIZACIÓN
+# ==========================
+if not df.empty and "origen" in df.columns and "pendiente" in df.columns:
+    fig = px.scatter(
+        df,
+        x="origen",
+        y="pendiente",
+        title="Curva de Madurez",
+        trendline="ols"
+    )
     st.plotly_chart(fig, use_container_width=True)
-else:
-    st.warning("La hoja está vacía. Por favor, carga datos en Google Sheets.")
 
-# ==============================
-# GENERAR PDF
-# ==============================
-def generar_pdf(titulo, datos):
+    # Calcular R²
+    if "pendiente" in df.columns and "origen" in df.columns:
+        try:
+            import statsmodels.api as sm
+            X = df["origen"]
+            y = df["pendiente"]
+            X_const = sm.add_constant(X)
+            model = sm.OLS(y, X_const).fit()
+            r2 = model.rsquared
+            st.metric("R²", f"{r2:.4f}")
+        except Exception:
+            st.warning("No se pudo calcular R²")
+
+else:
+    st.warning("La hoja no tiene las columnas requeridas: 'origen' y 'pendiente'")
+
+# ==========================
+# EXPORTAR EXCEL
+# ==========================
+def export_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        df.to_excel(writer, index=False, sheet_name="Curva")
+    return output.getvalue()
+
+# ==========================
+# EXPORTAR PDF
+# ==========================
+def export_pdf(df, titulo_informe):
     pdf = FPDF()
     pdf.add_page()
+    pdf.set_font("Arial", "B", 12)
 
-    # Título principal
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(200, 10, titulo, ln=True, align="C")
+    # Encabezado
+    pdf.cell(200, 10, "IoT Provoleta", ln=True, align="R")
+    pdf.ln(5)
 
+    # Título dinámico
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(200, 10, titulo_informe, ln=True, align="C")
     pdf.ln(10)
 
-    # Tabla de datos
+    # Contenido tabla
     pdf.set_font("Arial", "B", 12)
-    pdf.cell(95, 10, "Origen", border=1, align="C")
-    pdf.cell(95, 10, "Pendiente", border=1, align="C")
-    pdf.ln()
+    pdf.cell(90, 10, "Origen", 1, 0, "C")
+    pdf.cell(90, 10, "Pendiente", 1, 1, "C")
 
     pdf.set_font("Arial", "", 12)
-    for _, row in datos.iterrows():
-        pdf.cell(95, 10, str(row["origen"]), border=1, align="C")
-        pdf.cell(95, 10, str(row["pendiente"]), border=1, align="C")
-        pdf.ln()
+    for _, row in df.iterrows():
+        pdf.cell(90, 10, str(row["origen"]), 1, 0, "C")
+        pdf.cell(90, 10, str(row["pendiente"]), 1, 1, "C")
 
-    buffer = io.BytesIO()
-    pdf.output(buffer)
-    buffer.seek(0)
-    return buffer
+    return pdf.output(dest="S").encode("latin-1")
 
-# ==============================
-# BOTONES DESCARGA
-# ==============================
-col1, col2 = st.columns(2)
+# ==========================
+# BOTONES DE DESCARGA
+# ==========================
+if not df.empty:
+    col1, col2 = st.columns(2)
 
-with col1:
-    if not df.empty:
-        pdf_file = generar_pdf(titulo_informe, df)
+    with col1:
+        excel_data = export_excel(df)
         st.download_button(
-            "⬇️ Descargar PDF",
-            data=pdf_file,
-            file_name="informe.pdf",
-            mime="application/pdf",
-            key="download_pdf"
+            label="⬇️ Descargar Excel",
+            data=excel_data,
+            file_name="curva_madurez.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="excel"
         )
 
-with col2:
-    if not df.empty:
-        excel_file = io.BytesIO()
-        with pd.ExcelWriter(excel_file, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="CurvaMadurez")
-        excel_file.seek(0)
-
+    with col2:
+        pdf_data = export_pdf(df, titulo_informe)
         st.download_button(
-            "⬇️ Descargar Excel",
-            data=excel_file,
-            file_name="informe.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_excel"
+            label="⬇️ Descargar PDF",
+            data=pdf_data,
+            file_name="curva_madurez.pdf",
+            mime="application/pdf",
+            key="pdf"
         )
